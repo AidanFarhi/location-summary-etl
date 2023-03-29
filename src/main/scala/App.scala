@@ -75,7 +75,6 @@ object App extends SparkSessionWrapper {
     val listingLocationRecommendedSalaryDf = listingAndLocationDf
       .join(recommendedSalaryDf, Seq("county"), "inner")
 
-    // TODO: COUNTY attribute does not match in LOCATION and WAGE tables
     listingLocationRecommendedSalaryDf.show()
   }
 }
