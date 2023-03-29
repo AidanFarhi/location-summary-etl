@@ -12,14 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Setup JDK 11
-        uses: actions/setup-java@v2
-        with:
-          java-version: 11
-
       - name: Build fat jar
+        uses: olafurpg/setup-scala@v11
         run: sbt assembly
-      
+
       - name: Upload jar to S3
         uses: hkusu/s3-upload-action@v2
         with:
