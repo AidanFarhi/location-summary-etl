@@ -19,14 +19,12 @@ jobs:
 
       - name: Build fat jar
         run: sbt assembly
-
-      - name: Upload to S3
-        uses: jakejarvis/s3-sync-action@master
+      
+      - name: Upload jar to S3
+      - uses: hkusu/s3-upload-action@v2
         with:
-          args: --acl public-read --follow-symlinks --delete
-        env:
-          AWS_S3_BUCKET: afarhidev-private-jars
-          AWS_REGION: us-east-1
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          SOURCE_DIR: "target/scala-2.13"
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: 'us-east-1'
+          aws-bucket: 'afarhidev-private-jars'
+          file-path: './target/scala-2.13/*.jar'
