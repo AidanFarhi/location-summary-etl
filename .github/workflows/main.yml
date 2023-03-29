@@ -25,4 +25,4 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: 'us-east-1'
           aws-bucket: 'afarhidev-private-jars'
-          file-path: './target/scala-2.13/*.jar'
+          file-path: './target/scala-2.13/location-summary-etl-LATEST.jar'

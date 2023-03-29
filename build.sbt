@@ -1,15 +1,12 @@
-version := "0.1.0-SNAPSHOT"
 scalaVersion := "2.13.10"
 val sparkVersion = "3.3.2"
-artifactName := {
-  (sv: ScalaVersion, module: ModuleID, artifact: Artifact) =>
-    artifact.name + "_" + sv.binary + "-" + sparkVersion + "_" + module.revision + "." + artifact.extension
-}
 
 assemblyMergeStrategy in assembly := {
   case PathList("META-INF", xs @ _*) => MergeStrategy.discard
   case x => MergeStrategy.first
 }
+
+assemblyJarName in assembly := "location-summary-etl-LATEST.jar"
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion,
