@@ -12,8 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Build fat jar
+      - name: Setup Scala
         uses: olafurpg/setup-scala@v11
+
+      - name: Build fat jar
         run: sbt assembly
 
       - name: Upload jar to S3
