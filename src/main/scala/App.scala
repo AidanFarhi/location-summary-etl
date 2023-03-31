@@ -4,6 +4,24 @@ import org.apache.spark.sql.functions.{avg, col, year, current_date}
 object App extends SparkSessionWrapper {
   def main(args: Array[String]): Unit = {
 
+//    val crimeDf = spark.read
+//      .format(SNOWFLAKE_SOURCE_NAME)
+//      .options(sfOptions)
+//      .option("query",
+//      """
+//      SELECT cr1.*
+//      FROM crime_rate cr1
+//      INNER JOIN (
+//          SELECT zip_code, crime_type, MAX(as_of_date) AS max_date
+//          FROM crime_rate
+//          GROUP BY zip_code, crime_type
+//      ) cr2
+//      ON cr1.zip_code = cr2.zip_code
+//      AND cr1.crime_type = cr2.crime_type
+//      AND cr1.as_of_date = cr2.max_date
+//      """
+//      ).load()
+
     val householdDf = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
@@ -15,8 +33,7 @@ object App extends SparkSessionWrapper {
         working_adults = 1 AND
         children = 2
       """
-      )
-      .load()
+      ).load()
 
     val wageDf = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
@@ -64,15 +81,18 @@ object App extends SparkSessionWrapper {
       FROM listing
       WHERE snapshot_date = (SELECT max_date FROM max_date_cte)
       """
-      )
-      .load()
+      ).load()
       .withColumn("age_in_years", year(current_date()) - col("year_built"))
+
+    // TODO: Calculate a normalized crime score for each zip code
+
+    // TODO: Calculate a cost of living score for each zip code
 
     // Calculate recommended annual salary
     val recommendedSalaryDf = wageDf.join(householdDf, Seq("household_id"), "inner")
       .withColumn("recommended_annual_salary", col("hourly_wage") * 40 * 52)
 
-      // Calculate average annual salary for each county
+    // Calculate average annual salary for each county
     val avgAnnualSalaryDf = annualSalaryDf
       .groupBy("county").agg(avg(col("salary")).alias("avg_annual_salary"))
 
