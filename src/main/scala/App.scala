@@ -31,6 +31,17 @@ object App extends SparkSessionWrapper {
       """
       ).load()
 
+    val annualSalaryDf = spark.read
+      .format(SNOWFLAKE_SOURCE_NAME)
+      .options(sfOptions)
+      .option("query",
+      """
+      WITH max_date_cte AS (SELECT MAX(as_of_date) max_date FROM annual_salary)
+      SELECT * FROM annual_salary
+      WHERE as_of_date = (SELECT max_date FROM max_date_cte)
+      """
+      ).load()
+
     val locationDf = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
@@ -60,7 +71,10 @@ object App extends SparkSessionWrapper {
     // Calculate recommended annual salary
     val recommendedSalaryDf = wageDf.join(householdDf, Seq("household_id"), "inner")
       .withColumn("recommended_annual_salary", col("hourly_wage") * 40 * 52)
-    recommendedSalaryDf.show()
+
+      // Calculate average annual salary for each county
+    val avgAnnualSalaryDf = annualSalaryDf
+      .groupBy("county").agg(avg(col("salary")).alias("avg_annual_salary"))
 
     // Calculate AVGs for selected listing columns
     val columnNames = List("price", "bathrooms", "bedrooms", "age_in_years", "square_footage")
@@ -74,7 +88,11 @@ object App extends SparkSessionWrapper {
     // Join in recommended salary df
     val listingLocationRecommendedSalaryDf = listingAndLocationDf
       .join(recommendedSalaryDf, Seq("county"), "inner")
+    
+    // Join in average salary df
+    val allWithAverageSalary = listingLocationRecommendedSalaryDf
+      .join(avgAnnualSalaryDf, Seq("county"), "inner")
 
-    listingLocationRecommendedSalaryDf.show()
+    allWithAverageSalary.show()
   }
 }
