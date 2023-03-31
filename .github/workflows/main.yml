@@ -26,3 +26,4 @@ jobs:
           aws-region: 'us-east-1'
           aws-bucket: 'afarhidev-private-jars'
           file-path: './target/scala-2.13/location-summary-etl-LATEST.jar'
+          destination-dir: 'location-iq'

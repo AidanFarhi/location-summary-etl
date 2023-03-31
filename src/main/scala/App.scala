@@ -88,7 +88,7 @@ object App extends SparkSessionWrapper {
     // Join in recommended salary df
     val listingLocationRecommendedSalaryDf = listingAndLocationDf
       .join(recommendedSalaryDf, Seq("county"), "inner")
-    
+
     // Join in average salary df
     val allWithAverageSalary = listingLocationRecommendedSalaryDf
       .join(avgAnnualSalaryDf, Seq("county"), "inner")
