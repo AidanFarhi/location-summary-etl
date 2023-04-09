@@ -4,24 +4,31 @@ import org.apache.spark.sql.functions.{avg, col, current_date, desc, max, min, y
 object App extends SparkSessionWrapper {
   def main(args: Array[String]): Unit = {
 
-    val dimCrimeRate = spark.read
-      .format(SNOWFLAKE_SOURCE_NAME)
-      .options(sfOptions)
-      .option("query",
-      """
-      WITH latest_crime_rates AS (
-        SELECT location_id, crime_type, MAX(snapshot_date) AS max_date
-        FROM dim_crime_rate
-        GROUP BY location_id, crime_type
-      )
-      SELECT dcm.*
-      FROM dim_crime_rate dcm
-      JOIN latest_crime_rates lcm
-      ON dcm.location_id = lcm.location_id
-      AND dcm.crime_type = lcm.crime_type
-      AND dcm.snapshot_date = lcm.max_date
-      """
-      ).load()
+//    val dimCrimeRate = spark.read
+//      .format(SNOWFLAKE_SOURCE_NAME)
+//      .options(sfOptions)
+//      .option("query",
+//      """
+//      WITH latest_crime_rates AS (
+//        SELECT
+//          location_id,
+//          crime_type,
+//          MAX(snapshot_date) AS max_date
+//        FROM dim_crime_rate
+//        GROUP BY location_id, crime_type
+//      )
+//      SELECT
+//        dcm.location_id,
+//        dcm.rate,
+//        dcm.crime_type
+//      FROM dim_crime_rate dcm
+//      JOIN latest_crime_rates lcm
+//      ON
+//        dcm.location_id = lcm.location_id AND
+//        dcm.crime_type = lcm.crime_type AND
+//        dcm.snapshot_date = lcm.max_date
+//      """
+//      ).load()
 
 //    val dim_living_wage = spark.read
 //      .format(SNOWFLAKE_SOURCE_NAME)
@@ -45,11 +52,20 @@ object App extends SparkSessionWrapper {
 //      """
 //      ).load()
 
-    val dimLocation = spark.read
-      .format(SNOWFLAKE_SOURCE_NAME)
-      .options(sfOptions)
-      .option("query", "SELECT location_id, zip_code, state, county FROM dim_location WHERE state = 'DE'")
-      .load()
+//    val dimLocation = spark.read
+//      .format(SNOWFLAKE_SOURCE_NAME)
+//      .options(sfOptions)
+//      .option("query",
+//      """
+//      SELECT
+//        location_id,
+//        zip_code,
+//        state,
+//        county
+//      FROM dim_location
+//      WHERE state = 'DE'
+//      """
+//      ).load()
 
 //    val factListing = spark.read
 //      .format(SNOWFLAKE_SOURCE_NAME)
@@ -70,30 +86,30 @@ object App extends SparkSessionWrapper {
 //      ).load()
 //      .withColumn("age_in_years", year(current_date()) - col("year_built"))
 //
-    // TODO: Calculate a normalized crime score for each zip code
-    val dimCrimeRateWithZip = dimCrimeRate.join(dimLocation, Seq("location_id"), "inner")
-    val dimCrimeRateMinMax = dimCrimeRateWithZip
-      .agg(
-        min(col("rate")).alias("min_rate"),
-        max(col("rate")).alias("max_rate"),
-      ).first
-    val dimCrimeRateNormalized = dimCrimeRateWithZip
-      .withColumn(
-        "normalized_crime_rate",
-        ((dimCrimeRateWithZip("rate") - dimCrimeRateMinMax.getDouble(0)) /
-          (dimCrimeRateMinMax.getDouble(1) - dimCrimeRateMinMax.getDouble(0))) * 100
-      )
-      .groupBy("location_id","zip_code")
-      .agg(avg(col("normalized_crime_rate")).alias("avg_normalized_crime_rate"))
-      .orderBy(desc("avg_normalized_crime_rate"))
+//    val dimCrimeRateWithZip = dimCrimeRate.join(dimLocation, Seq("location_id"), "inner")
+//    val dimCrimeRateAvgRate = dimCrimeRateWithZip
+//      .groupBy("location_id", "zip_code")
+//      .agg(avg(col("rate")).alias("avg_crime_rate"))
+//    val dimCrimeRateMinMax = dimCrimeRateAvgRate
+//      .agg(
+//        min(col("avg_crime_rate")).alias("min_rate"),
+//        max(col("avg_crime_rate")).alias("max_rate"),
+//      ).first
+//    val dimCrimeRateNormalized = dimCrimeRateAvgRate
+//      .withColumn(
+//        "normalized_crime_rate",
+//        ((dimCrimeRateAvgRate("avg_crime_rate") - dimCrimeRateMinMax.getDouble(0)) /
+//          (dimCrimeRateMinMax.getDouble(1) - dimCrimeRateMinMax.getDouble(0))) * 100
+//      )
+//      .orderBy(desc("normalized_crime_rate"))
+//    dimCrimeRateNormalized.show(10)
 
-    dimCrimeRateNormalized.show(10)
     // TODO: Calculate a cost of living score for each zip code
-//
-//    // Calculate recommended annual salary
+
+    // TODO: Calculate recommended annual salary
 //    val recommendedSalaryDf = wageDf.join(householdDf, Seq("household_id"), "inner")
 //      .withColumn("recommended_annual_salary", col("hourly_wage") * 40 * 52)
-//
+
 //    // Calculate average annual salary for each county
 //    val avgAnnualSalaryDf = annualSalaryDf
 //      .groupBy("county").agg(avg(col("salary")).alias("avg_annual_salary"))
@@ -114,7 +130,7 @@ object App extends SparkSessionWrapper {
 //    // Join in average salary df
 //    val allWithAverageSalary = listingLocationRecommendedSalaryDf
 //      .join(avgAnnualSalaryDf, Seq("county"), "inner")
-//
+
 //    allWithAverageSalary.show()
   }
 }
