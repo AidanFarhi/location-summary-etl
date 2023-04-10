@@ -36,8 +36,15 @@ object App extends SparkSessionWrapper {
       .option("query",
       """
       WITH latest_living_wages AS (SELECT MAX(snapshot_date) max_date FROM dim_living_wage)
-      SELECT * FROM dim_living_wage
-      WHERE snapshot_date = (SELECT max_date FROM latest_living_wages)
+      SELECT
+        location_id,
+        hourly_wage
+      FROM dim_living_wage
+      WHERE
+        snapshot_date = (SELECT max_date FROM latest_living_wages) AND
+        number_of_adults = 2 AND
+        number_of_children = 2 AND
+        number_of_working_adults = 1
       """
       ).load()
 
