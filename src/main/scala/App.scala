@@ -74,6 +74,24 @@ object App extends SparkSessionWrapper {
       """
       ).load()
 
+    val dimAnnualExpense = spark.read
+      .format(SNOWFLAKE_SOURCE_NAME)
+      .options(sfOptions)
+      .option("query",
+        """
+        WITH latest_annual_expense AS (SELECT MAX(snapshot_date) max_date FROM dim_annual_expense)
+        SELECT
+          location_id,
+          amount
+        FROM dim_annual_expense
+        WHERE
+          snapshot_date = (SELECT max_date FROM latest_annual_expense) AND
+          number_of_adults = 2 AND
+          number_of_children = 2 AND
+          number_of_working_adults = 1
+          """
+      ).load()
+
     val factListing = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
@@ -109,9 +127,22 @@ object App extends SparkSessionWrapper {
           (dimCrimeRateMinMax.getDouble(1) - dimCrimeRateMinMax.getDouble(0))) * 100
       )
       .orderBy(desc("normalized_crime_rate"))
-    dimCrimeRateNormalized.show(10)
 
-    // TODO: Calculate a cost of living score for each zip code
+    val dimExpenseWithZip = dimAnnualExpense.join(dimLocation, Seq("location_id"), "inner")
+    val dimExpenseAvgExpense = dimExpenseWithZip
+      .groupBy("location_id", "zip_code")
+      .agg(avg(col("amount")).alias("avg_expense"))
+    val dimExpenseMinMax = dimExpenseAvgExpense
+      .agg(
+        min(col("avg_expense")).alias("min_rate"),
+        max(col("avg_expense")).alias("max_rate"),
+      ).first
+    val dimExpenseNormalized = dimExpenseAvgExpense
+      .withColumn(
+        "normalized_expense",
+        ((dimExpenseAvgExpense("avg_expense") - dimExpenseMinMax.getDouble(0)) /
+          (dimExpenseMinMax.getDouble(1) - dimExpenseMinMax.getDouble(0))) * 100
+      )
 
     // Calculate recommended annual salary
     val recommendedAnnSalary = dimLivingWage
@@ -140,6 +171,9 @@ object App extends SparkSessionWrapper {
     val listingLocRecSalAvgSalCrimeScore = listingLocRecSalAvgSal
       .join(dimCrimeRateNormalized, Seq("location_id"), "inner")
 
-    listingLocRecSalAvgSalCrimeScore.show()
+    val rawFinalResult = listingLocRecSalAvgSalCrimeScore
+      .join(dimExpenseNormalized, Seq("location_id"), "inner")
+    
+    rawFinalResult.show()
   }
 }
