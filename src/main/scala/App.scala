@@ -1,8 +1,6 @@
 import net.snowflake.spark.snowflake.Utils.SNOWFLAKE_SOURCE_NAME
-import org.apache.spark.sql.functions.{avg, col, current_date, datediff, lit, max, min, round, when, year}
-
-import java.text.SimpleDateFormat
-import java.util.Date
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.functions.{avg, col, current_date, datediff, max, min, round, when, year}
 
 object App extends SparkSessionWrapper {
   def main(args: Array[String]): Unit = {
@@ -191,13 +189,11 @@ object App extends SparkSessionWrapper {
     val finalColsStrings = List(
       "ZIP_CODE", "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
       "EXPENSE_SCORE", "CRIME_SCORE", "AVERAGE_HOME_PRICE", "AVERAGE_HOME_AGE_IN_YEARS",
-      "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "SNAPSHOT_DATE",
-      "AVERAGE_TIME_ON_MARKET_IN_DAYS"
+      "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "AVERAGE_TIME_ON_MARKET_IN_DAYS",
+      "SNAPSHOT_DATE"
     )
     val finalCols = finalColsStrings.map(s => col(s))
 
-    val dateFormatter = new SimpleDateFormat("yyyy-MM-dd")
-    val today = dateFormatter.format(new Date())
     val finalResult = rawFinalResult
       .withColumnRenamed("normalized_expense", "EXPENSE_SCORE")
       .withColumnRenamed("normalized_crime_rate", "CRIME_SCORE")
@@ -213,9 +209,14 @@ object App extends SparkSessionWrapper {
       .withColumn("CRIME_SCORE", round(col("CRIME_SCORE"), 2))
       .withColumn("AVERAGE_TIME_ON_MARKET_IN_DAYS", round(col("avg_days_on_market"), 2))
       .withColumn("AVERAGE_PRICE_PER_SQUARE_FOOT", round(col("AVERAGE_PRICE_PER_SQUARE_FOOT"), 2))
-      .withColumn("SNAPSHOT_DATE", lit(today))
+      .withColumn("SNAPSHOT_DATE", current_date())
       .select(finalCols:_*)
 
-    finalResult.show()
+    finalResult.write
+      .format("snowflake")
+      .options(sfOptions)
+      .option("dbtable", "summary_zip_code")
+      .mode(SaveMode.Append)
+      .save()
   }
 }

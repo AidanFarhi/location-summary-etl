@@ -16,7 +16,7 @@ trait SparkSessionWrapper {
       "sfPassword" -> sys.env("SNOWFLAKE_PASSWORD"),
       "sfDatabase" -> sys.env("SNOWFLAKE_DATABASE"),
       "sfSchema" -> sys.env("SNOWFLAKE_SCHEMA"),
-      "sfWarehouse" -> sys.env("SNOWFLAKE_WAREHOUSE")
+      "sfWarehouse" -> sys.env("SNOWFLAKE_WAREHOUSE"),
     ).toMap
   }
 }
