@@ -77,6 +77,7 @@ object App extends SparkSessionWrapper {
       """
       ).load()
 
+
     val dimAnnualExpense = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
@@ -177,6 +178,7 @@ object App extends SparkSessionWrapper {
 
     val listingLocRecSalAvgSalCrimeScore = listingLocRecSalAvgSal
       .join(dimCrimeRateNormalized, Seq("location_id"), "inner")
+      .drop(listingLocRecSalAvgSal("zip_code"))
 
     val rawFinalResult = listingLocRecSalAvgSalCrimeScore
       .join(dimExpenseNormalized, Seq("location_id"), "inner")
@@ -184,11 +186,10 @@ object App extends SparkSessionWrapper {
         "AVERAGE_PRICE_PER_SQUARE_FOOT",
         col("avg_price") / col("avg_square_footage")
       )
-
-    // TODO: Figure out how to get only one ZIP_CODE col
+      .drop(listingLocRecSalAvgSalCrimeScore("zip_code"))
 
     val finalColsStrings = List(
-      "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
+      "ZIP_CODE", "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
       "EXPENSE_SCORE", "CRIME_SCORE", "AVERAGE_HOME_PRICE", "AVERAGE_HOME_AGE_IN_YEARS",
       "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "SNAPSHOT_DATE",
       "AVERAGE_TIME_ON_MARKET_IN_DAYS"
@@ -203,6 +204,7 @@ object App extends SparkSessionWrapper {
       .withColumnRenamed("avg_price", "AVERAGE_HOME_PRICE")
       .withColumnRenamed("avg_age_in_years", "AVERAGE_HOME_AGE_IN_YEARS")
       .withColumnRenamed("avg_square_footage", "AVERAGE_SQUARE_FOOTAGE")
+      .withColumnRenamed("zip_code", "ZIP_CODE")
       .withColumn("AVERAGE_HOME_PRICE", round(col("AVERAGE_HOME_PRICE"), 2))
       .withColumn("AVERAGE_HOME_AGE_IN_YEARS", round(col("AVERAGE_HOME_AGE_IN_YEARS"), 2))
       .withColumn("AVERAGE_SQUARE_FOOTAGE", round(col("AVERAGE_SQUARE_FOOTAGE"), 2))
