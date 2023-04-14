@@ -1,8 +1,6 @@
 import net.snowflake.spark.snowflake.Utils.SNOWFLAKE_SOURCE_NAME
-import org.apache.spark.sql.functions.{avg, col, current_date, lit, max, min, round, year}
-
-import java.text.SimpleDateFormat
-import java.util.Date
+import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.functions.{avg, col, current_date, datediff, max, min, round, when, year}
 
 object App extends SparkSessionWrapper {
   def main(args: Array[String]): Unit = {
@@ -77,6 +75,7 @@ object App extends SparkSessionWrapper {
       """
       ).load()
 
+
     val dimAnnualExpense = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
@@ -107,12 +106,17 @@ object App extends SparkSessionWrapper {
         bathrooms,
         bedrooms,
         square_footage,
+        listed_date,
+        removed_date,
         year_built
       FROM fact_listing
       WHERE snapshot_date = (SELECT max_date FROM latest_listings)
       """
       ).load()
       .withColumn("age_in_years", year(current_date()) - col("year_built"))
+      .withColumn("days_on_market",
+        when(col("removed_date").isNull, datediff(current_date(), col("listed_date")))
+        .otherwise(datediff(col("removed_date"), col("listed_date"))))
 
     val dimCrimeRateWithZip = dimCrimeRate.join(dimLocation, Seq("location_id"), "inner")
     val dimCrimeRateAvgRate = dimCrimeRateWithZip
@@ -155,7 +159,7 @@ object App extends SparkSessionWrapper {
       .groupBy("location_id").agg(avg(col("salary")).alias("AVERAGE_ANNUAL_SALARY"))
 
     // Calculate AVGs for selected listing columns
-    val columnNames = List("price", "bathrooms", "bedrooms", "age_in_years", "square_footage")
+    val columnNames = List("price", "bathrooms", "bedrooms", "age_in_years", "square_footage", "days_on_market")
     val avgCols = columnNames.map(c => avg(col(c)).alias(s"avg_$c"))
     val listingSummary = factListing.groupBy("location_id").agg(avgCols.head, avgCols.tail: _*)
 
@@ -172,6 +176,7 @@ object App extends SparkSessionWrapper {
 
     val listingLocRecSalAvgSalCrimeScore = listingLocRecSalAvgSal
       .join(dimCrimeRateNormalized, Seq("location_id"), "inner")
+      .drop(listingLocRecSalAvgSal("zip_code"))
 
     val rawFinalResult = listingLocRecSalAvgSalCrimeScore
       .join(dimExpenseNormalized, Seq("location_id"), "inner")
@@ -179,35 +184,39 @@ object App extends SparkSessionWrapper {
         "AVERAGE_PRICE_PER_SQUARE_FOOT",
         col("avg_price") / col("avg_square_footage")
       )
+      .drop(listingLocRecSalAvgSalCrimeScore("zip_code"))
 
-    // TODO: Figure out how to get only one ZIP_CODE col
-    // TODO: Calculate average time on market in years
+    val finalColsStrings = List(
+      "ZIP_CODE", "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
+      "EXPENSE_SCORE", "CRIME_SCORE", "AVERAGE_HOME_PRICE", "AVERAGE_HOME_AGE_IN_YEARS",
+      "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "AVERAGE_TIME_ON_MARKET_IN_DAYS",
+      "SNAPSHOT_DATE"
+    )
+    val finalCols = finalColsStrings.map(s => col(s))
 
-//    val finalColsStrings = List(
-//      "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
-//      "EXPENSE_SCORE", "CRIME_SCORE", "AVERAGE_HOME_PRICE", "AVERAGE_HOME_AGE_IN_YEARS",
-//      "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "SNAPSHOT_DATE"
-//    )
-//    val finalCols = finalColsStrings.map(s => col(s))
-
-    val dateFormatter = new SimpleDateFormat("yyyy-MM-dd")
-    val today = dateFormatter.format(new Date())
     val finalResult = rawFinalResult
       .withColumnRenamed("normalized_expense", "EXPENSE_SCORE")
       .withColumnRenamed("normalized_crime_rate", "CRIME_SCORE")
       .withColumnRenamed("avg_price", "AVERAGE_HOME_PRICE")
       .withColumnRenamed("avg_age_in_years", "AVERAGE_HOME_AGE_IN_YEARS")
       .withColumnRenamed("avg_square_footage", "AVERAGE_SQUARE_FOOTAGE")
+      .withColumnRenamed("zip_code", "ZIP_CODE")
       .withColumn("AVERAGE_HOME_PRICE", round(col("AVERAGE_HOME_PRICE"), 2))
       .withColumn("AVERAGE_HOME_AGE_IN_YEARS", round(col("AVERAGE_HOME_AGE_IN_YEARS"), 2))
       .withColumn("AVERAGE_SQUARE_FOOTAGE", round(col("AVERAGE_SQUARE_FOOTAGE"), 2))
       .withColumn("AVERAGE_ANNUAL_SALARY", round(col("AVERAGE_ANNUAL_SALARY"), 2))
       .withColumn("EXPENSE_SCORE", round(col("EXPENSE_SCORE"), 2))
       .withColumn("CRIME_SCORE", round(col("CRIME_SCORE"), 2))
+      .withColumn("AVERAGE_TIME_ON_MARKET_IN_DAYS", round(col("avg_days_on_market"), 2))
       .withColumn("AVERAGE_PRICE_PER_SQUARE_FOOT", round(col("AVERAGE_PRICE_PER_SQUARE_FOOT"), 2))
-      .withColumn("SNAPSHOT_DATE", lit(today))
-//      .select(finalCols:_*)
+      .withColumn("SNAPSHOT_DATE", current_date())
+      .select(finalCols:_*)
 
-    finalResult.show()
+    finalResult.write
+      .format("snowflake")
+      .options(sfOptions)
+      .option("dbtable", "summary_zip_code")
+      .mode(SaveMode.Append)
+      .save()
   }
 }
