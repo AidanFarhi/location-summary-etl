@@ -1,5 +1,5 @@
 import net.snowflake.spark.snowflake.Utils.SNOWFLAKE_SOURCE_NAME
-import org.apache.spark.sql.functions.{avg, col, current_date, lit, max, min, round, year}
+import org.apache.spark.sql.functions.{avg, col, current_date, datediff, lit, max, min, round, when, year}
 
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -107,12 +107,17 @@ object App extends SparkSessionWrapper {
         bathrooms,
         bedrooms,
         square_footage,
+        listed_date,
+        removed_date,
         year_built
       FROM fact_listing
       WHERE snapshot_date = (SELECT max_date FROM latest_listings)
       """
       ).load()
       .withColumn("age_in_years", year(current_date()) - col("year_built"))
+      .withColumn("days_on_market",
+        when(col("removed_date").isNull, datediff(current_date(), col("listed_date")))
+        .otherwise(datediff(col("removed_date"), col("listed_date"))))
 
     val dimCrimeRateWithZip = dimCrimeRate.join(dimLocation, Seq("location_id"), "inner")
     val dimCrimeRateAvgRate = dimCrimeRateWithZip
@@ -155,7 +160,7 @@ object App extends SparkSessionWrapper {
       .groupBy("location_id").agg(avg(col("salary")).alias("AVERAGE_ANNUAL_SALARY"))
 
     // Calculate AVGs for selected listing columns
-    val columnNames = List("price", "bathrooms", "bedrooms", "age_in_years", "square_footage")
+    val columnNames = List("price", "bathrooms", "bedrooms", "age_in_years", "square_footage", "days_on_market")
     val avgCols = columnNames.map(c => avg(col(c)).alias(s"avg_$c"))
     val listingSummary = factListing.groupBy("location_id").agg(avgCols.head, avgCols.tail: _*)
 
@@ -181,14 +186,14 @@ object App extends SparkSessionWrapper {
       )
 
     // TODO: Figure out how to get only one ZIP_CODE col
-    // TODO: Calculate average time on market in years
 
-//    val finalColsStrings = List(
-//      "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
-//      "EXPENSE_SCORE", "CRIME_SCORE", "AVERAGE_HOME_PRICE", "AVERAGE_HOME_AGE_IN_YEARS",
-//      "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "SNAPSHOT_DATE"
-//    )
-//    val finalCols = finalColsStrings.map(s => col(s))
+    val finalColsStrings = List(
+      "STATE", "COUNTY", "RECOMMENDED_ANNUAL_SALARY", "AVERAGE_ANNUAL_SALARY",
+      "EXPENSE_SCORE", "CRIME_SCORE", "AVERAGE_HOME_PRICE", "AVERAGE_HOME_AGE_IN_YEARS",
+      "AVERAGE_SQUARE_FOOTAGE", "AVERAGE_PRICE_PER_SQUARE_FOOT", "SNAPSHOT_DATE",
+      "AVERAGE_TIME_ON_MARKET_IN_DAYS"
+    )
+    val finalCols = finalColsStrings.map(s => col(s))
 
     val dateFormatter = new SimpleDateFormat("yyyy-MM-dd")
     val today = dateFormatter.format(new Date())
@@ -204,9 +209,10 @@ object App extends SparkSessionWrapper {
       .withColumn("AVERAGE_ANNUAL_SALARY", round(col("AVERAGE_ANNUAL_SALARY"), 2))
       .withColumn("EXPENSE_SCORE", round(col("EXPENSE_SCORE"), 2))
       .withColumn("CRIME_SCORE", round(col("CRIME_SCORE"), 2))
+      .withColumn("AVERAGE_TIME_ON_MARKET_IN_DAYS", round(col("avg_days_on_market"), 2))
       .withColumn("AVERAGE_PRICE_PER_SQUARE_FOOT", round(col("AVERAGE_PRICE_PER_SQUARE_FOOT"), 2))
       .withColumn("SNAPSHOT_DATE", lit(today))
-//      .select(finalCols:_*)
+      .select(finalCols:_*)
 
     finalResult.show()
   }
