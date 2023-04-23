@@ -4,7 +4,7 @@ trait SparkSessionWrapper {
   lazy val spark: SparkSession = {
     SparkSession
       .builder()
-      .master("local")
+      .master(sys.env("SPARK_MASTER_URL"))
       .appName("location-summary-etl")
       .getOrCreate()
   }
