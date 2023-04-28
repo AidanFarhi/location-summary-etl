@@ -1,9 +1,23 @@
 import net.snowflake.spark.snowflake.Utils.SNOWFLAKE_SOURCE_NAME
-import org.apache.spark.sql.SaveMode
+import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.functions.{avg, col, current_date, datediff, max, min, round, when, year}
 
-object App extends SparkSessionWrapper {
+object App {
   def main(args: Array[String]): Unit = {
+
+    val sfOptions: Map[String, String] = Map(
+        "sfURL" -> args(0),
+        "sfUser" -> args(1),
+        "sfPassword" -> args(2),
+        "sfDatabase" -> args(3),
+        "sfSchema" -> args(4),
+        "sfWarehouse" -> args(5)
+      )
+
+    val conf = new SparkConf().setAppName("location-summary-etl")
+    val sc = new SparkContext(conf)
+    val spark = SparkSession.builder.config(sc.getConf).getOrCreate()
 
     val dimCrimeRate = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
