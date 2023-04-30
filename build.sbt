@@ -1,12 +1,13 @@
 scalaVersion := "2.12.10"
 val sparkVersion = "3.3.2"
 
-assemblyMergeStrategy in assembly := {
-  // case PathList("META-INF", xs @ _*) => MergeStrategy.rename
-  case x => MergeStrategy.rename
-}
-
 assemblyJarName in assembly := "location-summary-etl-LATEST.jar"
+
+assemblyMergeStrategy in assembly := {
+  case x if x.startsWith("mozilla") => MergeStrategy.filterDistinctLines
+  case x => val oldStrategy = (assemblyMergeStrategy in assembly).value
+    oldStrategy(x)
+}
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion % "provided",
