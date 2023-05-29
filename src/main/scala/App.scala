@@ -19,58 +19,76 @@ object App {
     val sc = new SparkContext(conf)
     val spark = SparkSession.builder.config(sc.getConf).getOrCreate()
 
-    val dimCrimeRate = spark.read
+    val factCrimeRate = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
       .option("query",
       """
       WITH latest_crime_rates AS (
         SELECT
-          location_id,
-          crime_type,
-          MAX(snapshot_date) AS max_date
-        FROM dim_crime_rate
-        GROUP BY location_id, crime_type
+          cr.location_id,
+          cr.crime_type,
+          MAX(dd.date) AS max_date
+        FROM fact_crime_rate cr
+        JOIN dim_date dd
+        ON dd.date_id = cr.snapshot_date_id
+        GROUP BY cr.location_id, cr.crime_type
       )
       SELECT
-        dcm.location_id,
-        dcm.rate,
-        dcm.crime_type
-      FROM dim_crime_rate dcm
-      JOIN latest_crime_rates lcm
+        fcr.location_id,
+        fcr.rate,
+        fcr.crime_type
+      FROM fact_crime_rate fcr
+      JOIN dim_date dd
+      ON dd.date_id = fcr.snapshot_date_id
+      JOIN latest_crime_rates lcr
       ON
-        dcm.location_id = lcm.location_id AND
-        dcm.crime_type = lcm.crime_type AND
-        dcm.snapshot_date = lcm.max_date
+        fcr.location_id = lcr.location_id AND
+        fcr.crime_type = lcr.crime_type AND
+        dd.date = lcr.max_date
       """
       ).load()
 
-    val dimLivingWage = spark.read
+    val factLivingWage = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
       .option("query",
       """
-      WITH latest_living_wages AS (SELECT MAX(snapshot_date) max_date FROM dim_living_wage)
+      WITH max_living_wage_date AS (
+        SELECT MAX(dd.date) max_date
+        FROM fact_living_wage flw
+        JOIN dim_date dd
+        ON dd.date_id = flw.snapshot_date_id
+      )
       SELECT
-        location_id,
-        hourly_wage
-      FROM dim_living_wage
+        flw.location_id,
+        flw.hourly_wage
+      FROM fact_living_wage flw
+      JOIN dim_date dd
+      ON dd.date_id = flw.snapshot_date_id
       WHERE
-        snapshot_date = (SELECT max_date FROM latest_living_wages) AND
-        number_of_adults = 2 AND
-        number_of_children = 2 AND
-        number_of_working_adults = 1
+        dd.date = (SELECT max_date FROM max_living_wage_date) AND
+        flw.number_of_adults = 2 AND
+        flw.number_of_children = 2 AND
+        flw.number_of_working_adults = 1
       """
       ).load()
 
-    val dimTypAnnSalary = spark.read
+    val factTypAnnSalary = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
       .option("query",
       """
-      WITH latest_typ_ann_sal AS (SELECT MAX(snapshot_date) max_date FROM dim_typical_annual_salary)
-      SELECT * FROM dim_typical_annual_salary
-      WHERE snapshot_date = (SELECT max_date FROM latest_typ_ann_sal)
+      WITH max_typ_ann_sal_date AS (
+        SELECT MAX(dd.date) AS max_date
+        FROM fact_typical_annual_salary ftas
+        JOIN dim_date dd
+        ON dd.date_id = ftas.snapshot_date_id
+      )
+      SELECT * FROM fact_typical_annual_salary ftas
+      JOIN dim_date dd
+      ON dd.date_id = ftas.snapshot_date_id
+      WHERE dd.date = (SELECT max_date FROM max_typ_ann_sal_date)
       """
       ).load()
 
@@ -89,23 +107,29 @@ object App {
       """
       ).load()
 
-
-    val dimAnnualExpense = spark.read
+    val factAnnualExpense = spark.read
       .format(SNOWFLAKE_SOURCE_NAME)
       .options(sfOptions)
       .option("query",
-        """
-        WITH latest_annual_expense AS (SELECT MAX(snapshot_date) max_date FROM dim_annual_expense)
-        SELECT
-          location_id,
-          amount
-        FROM dim_annual_expense
-        WHERE
-          snapshot_date = (SELECT max_date FROM latest_annual_expense) AND
-          number_of_adults = 2 AND
-          number_of_children = 2 AND
-          number_of_working_adults = 1
-          """
+      """
+      WITH annual_expense_max_date AS (
+        SELECT MAX(dd.date) AS max_date
+        FROM fact_annual_expense fae
+        JOIN dim_date dd
+        ON dd.date_id = fae.snapshot_date_id
+      )
+      SELECT
+        fae.location_id,
+        fae.amount
+      FROM fact_annual_expense fae
+      JOIN dim_date dd
+      ON dd.date_id = fae.snapshot_date_id
+      WHERE
+        dd.date = (SELECT max_date FROM annual_expense_max_date) AND
+        number_of_adults = 2 AND
+        number_of_children = 2 AND
+        number_of_working_adults = 1
+      """
       ).load()
 
     val factListing = spark.read
@@ -113,18 +137,30 @@ object App {
       .options(sfOptions)
       .option("query",
       """
-      WITH latest_listings AS (SELECT MAX(snapshot_date) max_date FROM fact_listing)
+      WITH listing_max_date AS (
+        SELECT MAX(dd.date) AS max_date
+        FROM fact_listing fl
+        JOIN dim_date dd
+        ON dd.date_id = fl.snapshot_date_id
+      )
       SELECT
-        location_id,
-        price,
-        bathrooms,
-        bedrooms,
-        square_footage,
-        listed_date,
-        removed_date,
-        year_built
-      FROM fact_listing
-      WHERE snapshot_date = (SELECT max_date FROM latest_listings)
+        fl.location_id,
+        fl.price,
+        fl.bathrooms,
+        fl.bedrooms,
+        fl.square_footage,
+        sd.date,
+        ld.date AS listed_date,
+        rd.date AS removed_date,
+        fl.year_built
+      FROM fact_listing fl
+      JOIN dim_date sd
+      ON sd.date_id = fl.snapshot_date_id
+      JOIN dim_date ld
+      ON ld.date_id = fl.listed_date_id
+      LEFT JOIN dim_date rd
+      ON rd.date_id = fl.removed_date_id
+      WHERE sd.date = (SELECT max_date FROM listing_max_date)
       """
       ).load()
       .withColumn("age_in_years", year(current_date()) - col("year_built"))
@@ -132,44 +168,44 @@ object App {
         when(col("removed_date").isNull, datediff(current_date(), col("listed_date")))
         .otherwise(datediff(col("removed_date"), col("listed_date"))))
 
-    val dimCrimeRateWithZip = dimCrimeRate.join(dimLocation, Seq("location_id"), "inner")
-    val dimCrimeRateAvgRate = dimCrimeRateWithZip
+    val factCrimeRateWithZip = factCrimeRate.join(dimLocation, Seq("location_id"), "inner")
+    val factCrimeRateAvgRate = factCrimeRateWithZip
       .groupBy("location_id", "zip_code")
       .agg(avg(col("rate")).alias("avg_crime_rate"))
-    val dimCrimeRateMinMax = dimCrimeRateAvgRate
+    val factCrimeRateMinMax = factCrimeRateAvgRate
       .agg(
         min(col("avg_crime_rate")).alias("min_rate"),
         max(col("avg_crime_rate")).alias("max_rate"),
       ).first
-    val dimCrimeRateNormalized = dimCrimeRateAvgRate
+    val factCrimeRateNormalized = factCrimeRateAvgRate
       .withColumn(
         "normalized_crime_rate",
-        ((dimCrimeRateAvgRate("avg_crime_rate") - dimCrimeRateMinMax.getDouble(0)) /
-          (dimCrimeRateMinMax.getDouble(1) - dimCrimeRateMinMax.getDouble(0))) * 100
+        ((factCrimeRateAvgRate("avg_crime_rate") - factCrimeRateMinMax.getDouble(0)) /
+          (factCrimeRateMinMax.getDouble(1) - factCrimeRateMinMax.getDouble(0))) * 100
       )
 
-    val dimExpenseWithZip = dimAnnualExpense.join(dimLocation, Seq("location_id"), "inner")
-    val dimExpenseAvgExpense = dimExpenseWithZip
+    val factExpenseWithZip = factAnnualExpense.join(dimLocation, Seq("location_id"), "inner")
+    val factExpenseAvgExpense = factExpenseWithZip
       .groupBy("location_id", "zip_code")
       .agg(avg(col("amount")).alias("avg_expense"))
-    val dimExpenseMinMax = dimExpenseAvgExpense
+    val factExpenseMinMax = factExpenseAvgExpense
       .agg(
         min(col("avg_expense")).alias("min_rate"),
         max(col("avg_expense")).alias("max_rate"),
       ).first
-    val dimExpenseNormalized = dimExpenseAvgExpense
+    val dimExpenseNormalized = factExpenseAvgExpense
       .withColumn(
         "normalized_expense",
-        ((dimExpenseAvgExpense("avg_expense") - dimExpenseMinMax.getDouble(0)) /
-          (dimExpenseMinMax.getDouble(1) - dimExpenseMinMax.getDouble(0))) * 100
+        ((factExpenseAvgExpense("avg_expense") - factExpenseMinMax.getDouble(0)) /
+          (factExpenseMinMax.getDouble(1) - factExpenseMinMax.getDouble(0))) * 100
       )
 
     // Calculate recommended annual salary
-    val recommendedAnnSalary = dimLivingWage
+    val recommendedAnnSalary = factLivingWage
       .withColumn("RECOMMENDED_ANNUAL_SALARY", col("hourly_wage") * 40 * 52)
 
     // Calculate average annual salary
-    val avgAnnualSalary = dimTypAnnSalary
+    val avgAnnualSalary = factTypAnnSalary
       .groupBy("location_id").agg(avg(col("salary")).alias("AVERAGE_ANNUAL_SALARY"))
 
     // Calculate AVGs for selected listing columns
@@ -189,7 +225,7 @@ object App {
       .join(avgAnnualSalary, Seq("location_id"), "inner")
 
     val listingLocRecSalAvgSalCrimeScore = listingLocRecSalAvgSal
-      .join(dimCrimeRateNormalized, Seq("location_id"), "inner")
+      .join(factCrimeRateNormalized, Seq("location_id"), "inner")
       .drop(listingLocRecSalAvgSal("zip_code"))
 
     val rawFinalResult = listingLocRecSalAvgSalCrimeScore
